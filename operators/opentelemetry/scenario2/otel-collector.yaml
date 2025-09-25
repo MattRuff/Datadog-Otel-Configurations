@@ -1,0 +1,224 @@
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-collector
+  namespace: opentelemetry
+spec:
+  mode: deployment
+  replicas: 2
+  
+  # Resource allocation
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    
+  # Ports configuration
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+    - name: metrics
+      port: 8888
+      targetPort: 8888
+      protocol: TCP
+    - name: health
+      port: 13133
+      targetPort: 13133
+      protocol: TCP
+  
+  # Environment variables
+  env:
+    - name: DD_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: datadog-secret
+          key: api-key
+  
+  # OpenTelemetry Collector configuration
+  config: |
+    receivers:
+      # OTLP receiver for traces, metrics, and logs
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+            cors:
+              allowed_origins:
+                - "http://localhost:3000"
+                - "http://frontend-service"
+      
+      # Host metrics for infrastructure monitoring
+      hostmetrics:
+        collection_interval: 10s
+        scrapers:
+          cpu:
+          disk:
+          filesystem:
+          load:
+          memory:
+          network:
+          process:
+    
+    processors:
+      # Memory limiter to prevent OOM
+      memory_limiter:
+        limit_mib: 768
+        spike_limit_mib: 256
+        check_interval: 5s
+      
+      # Batch processor for efficiency
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+        send_batch_max_size: 2048
+      
+      # Resource detection for automatic tagging
+      resourcedetection:
+        detectors: [env, system, kubernetes]
+        timeout: 5s
+        override: false
+        attributes:
+          - key: cloud.provider
+            action: delete
+          - key: cloud.platform
+            action: delete
+      
+      # Kubernetes attributes processor
+      k8sattributes:
+        auth_type: "serviceAccount"
+        passthrough: false
+        filter:
+          node_from_env_var: KUBE_NODE_NAME
+        extract:
+          metadata:
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.deployment.name
+            - k8s.namespace.name
+            - k8s.node.name
+            - k8s.pod.start_time
+            - k8s.container.name
+        pod_association:
+          - sources:
+            - from: resource_attribute
+              name: k8s.pod.ip
+          - sources:
+            - from: resource_attribute
+              name: k8s.pod.uid
+          - sources:
+            - from: connection
+      
+      # Transform processor for additional enrichment
+      transform:
+        trace_statements:
+          - context: span
+            statements:
+              - set(attributes["otel.scenario"], "scenario2")
+              - set(attributes["deployment.pattern"], "otel-collector")
+              - set(attributes["telemetry.source"], "opentelemetry-collector")
+        metric_statements:
+          - context: metric
+            statements:
+              - set(attributes["otel.scenario"], "scenario2")
+              - set(attributes["deployment.pattern"], "otel-collector")
+              - set(attributes["telemetry.source"], "opentelemetry-collector")
+        log_statements:
+          - context: log
+            statements:
+              - set(attributes["otel.scenario"], "scenario2")
+              - set(attributes["deployment.pattern"], "otel-collector")
+              - set(attributes["telemetry.source"], "opentelemetry-collector")
+      
+      # Probabilistic sampling for traces (optional)
+      probabilistic_sampler:
+        sampling_percentage: 100.0
+    
+    exporters:
+      # Datadog exporter
+      datadog:
+        api:
+          site: datadoghq.com  # Change to your Datadog site
+          key: ${DD_API_KEY}
+        
+        traces:
+          endpoint: https://trace.agent.datadoghq.com
+          ignore_resources: []
+        
+        metrics:
+          endpoint: https://api.datadoghq.com
+          
+        logs:
+          endpoint: https://http-intake.logs.datadoghq.com
+          
+        hostname_source: "config_or_system"
+        
+        # Enhanced metadata for better correlation
+        host_metadata:
+          enabled: true
+          hostname_source: "config_or_system"
+          
+        # Resource mapping for better service correlation
+        resource_attributes_as_tags: true
+        instrumentation_library_metadata_as_tags: true
+        
+      # Debug exporter for troubleshooting (optional)
+      debug:
+        verbosity: basic
+        sampling_initial: 2
+        sampling_thereafter: 500
+        
+      # OTLP exporter (for forwarding to other collectors if needed)
+      otlp:
+        endpoint: "http://localhost:4317"
+        tls:
+          insecure: true
+    
+    service:
+      telemetry:
+        logs:
+          level: "info"
+        metrics:
+          address: 0.0.0.0:8888
+          
+      extensions: [health_check, pprof, zpages]
+      
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform, probabilistic_sampler, batch]
+          exporters: [datadog]
+          
+        metrics:
+          receivers: [otlp, hostmetrics]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform, batch]
+          exporters: [datadog]
+          
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform, batch]
+          exporters: [datadog]
+    
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+        
+      pprof:
+        endpoint: 0.0.0.0:1777
+        
+      zpages:
+        endpoint: 0.0.0.0:55679

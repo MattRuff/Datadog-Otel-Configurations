@@ -1,0 +1,289 @@
+apiVersion: datadoghq.com/v2alpha1
+kind: DatadogAgent
+metadata:
+  name: datadog-agent-ddot
+  namespace: datadog
+spec:
+  global:
+    clusterName: "otel-lab-cluster"
+    site: "datadoghq.com"  # Change to your Datadog site (e.g., datadoghq.eu, us3.datadoghq.com)
+    registry: "gcr.io/datadoghq"
+    credentials:
+      apiSecret:
+        secretName: datadog-secret
+        keyName: api-key
+      appSecret:
+        secretName: datadog-secret
+        keyName: app-key
+    tags:
+      - "env:development"
+      - "scenario:ddot-collector"
+      - "deployment:kubernetes"
+    
+  features:
+    # Enable OTLP ingestion
+    otlp:
+      receiver:
+        protocols:
+          grpc:
+            enabled: true
+            endpoint: "0.0.0.0:4317"
+          http:
+            enabled: true
+            endpoint: "0.0.0.0:4318"
+    
+    # Enable OpenTelemetry Collector
+    otelCollector:
+      enabled: true
+      configMap:
+        name: ddot-collector-config
+        
+    # Enable standard observability features
+    apm:
+      enabled: true
+      hostPortEnabled: true
+      unixDomainSocketEnabled: true
+    
+    logCollection:
+      enabled: true
+      containerCollectAll: true
+      
+    liveContainerCollection:
+      enabled: true
+      
+    npm:
+      enabled: true
+      
+    usm:
+      enabled: true
+      
+    admissionController:
+      enabled: true
+      mutateUnlabelled: false
+      
+    externalMetricsServer:
+      enabled: false
+      
+    orchestratorExplorer:
+      enabled: true
+      
+    kubeStateMetricsCore:
+      enabled: true
+      
+    helmCheck:
+      enabled: true
+      collectEvents: true
+      
+  nodeAgent:
+    image:
+      repository: "agent"
+      tag: "latest"
+    
+    config:
+      # Enable OpenTelemetry Collector in the Agent
+      otlp_config:
+        receiver:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+      
+      # Additional logging for debugging
+      log_level: "INFO"
+      
+    tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+        
+    env:
+      - name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT
+        value: "0.0.0.0:4317"
+      - name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT
+        value: "0.0.0.0:4318"
+      # Enable the DDOT Collector
+      - name: DD_OTEL_ENABLED
+        value: "true"
+        
+  clusterAgent:
+    image:
+      repository: "cluster-agent"
+      tag: "latest"
+      
+    config:
+      clusterChecks:
+        enabled: true
+      
+      # Enable admission controller
+      admissionController:
+        enabled: true
+        mutateUnlabelled: false
+        
+      externalMetrics:
+        enabled: false
+        
+    env:
+      - name: DD_CLUSTER_CHECKS_ENABLED
+        value: "true"
+        
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ddot-collector-config
+  namespace: datadog
+data:
+  # DDOT Collector configuration
+  # This uses Datadog's distribution of OpenTelemetry with curated components
+  collector.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      
+      # Host metrics for infrastructure monitoring
+      hostmetrics:
+        collection_interval: 10s
+        scrapers:
+          cpu:
+          disk:
+          filesystem:
+          load:
+          memory:
+          network:
+          process:
+    
+    processors:
+      # Memory limiter to prevent OOM
+      memory_limiter:
+        limit_mib: 512
+        spike_limit_mib: 128
+        check_interval: 5s
+      
+      # Batch processor for efficiency
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+        send_batch_max_size: 2048
+      
+      # Resource detection for automatic tagging
+      resourcedetection:
+        detectors: [env, system, kubernetes]
+        timeout: 5s
+        override: false
+      
+      # Kubernetes attributes processor (Datadog's enhanced version)
+      k8sattributes:
+        auth_type: "serviceAccount"
+        passthrough: false
+        filter:
+          node_from_env_var: KUBE_NODE_NAME
+        extract:
+          metadata:
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.deployment.name
+            - k8s.namespace.name
+            - k8s.node.name
+            - k8s.pod.start_time
+        pod_association:
+          - sources:
+            - from: resource_attribute
+              name: k8s.pod.ip
+          - sources:
+            - from: resource_attribute
+              name: k8s.pod.uid
+          - sources:
+            - from: connection
+      
+      # Transform processor for additional enrichment
+      transform:
+        trace_statements:
+          - context: span
+            statements:
+              - set(attributes["datadog.scenario"], "ddot-collector")
+              - set(attributes["deployment.pattern"], "scenario3")
+        metric_statements:
+          - context: metric
+            statements:
+              - set(attributes["datadog.scenario"], "ddot-collector")
+              - set(attributes["deployment.pattern"], "scenario3")
+        log_statements:
+          - context: log
+            statements:
+              - set(attributes["datadog.scenario"], "ddot-collector")
+              - set(attributes["deployment.pattern"], "scenario3")
+    
+    exporters:
+      # Datadog exporter (optimized for DDOT)
+      datadog:
+        api:
+          site: datadoghq.com  # Change to your Datadog site
+          key: ${DD_API_KEY}
+        
+        traces:
+          endpoint: https://trace.agent.datadoghq.com
+          ignore_resources: []
+        
+        metrics:
+          endpoint: https://api.datadoghq.com
+          
+        logs:
+          endpoint: https://http-intake.logs.datadoghq.com
+          
+        hostname_source: "config_or_system"
+        
+        # Enable infrastructure correlation
+        host_metadata:
+          enabled: true
+          hostname_source: "config_or_system"
+          
+    connectors:
+      # Datadog connector for enhanced telemetry correlation
+      datadog/connector:
+        traces:
+          compute_stats_by_span_kind: true
+          peer_tags_aggregation: true
+          compute_top_level_by_span_kind: true
+          
+    service:
+      telemetry:
+        logs:
+          level: "info"
+        metrics:
+          address: 0.0.0.0:8888
+          
+      extensions: [health_check, pprof, zpages]
+      
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform, batch]
+          exporters: [datadog]
+          
+        metrics:
+          receivers: [otlp, hostmetrics]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform, batch]
+          exporters: [datadog]
+          
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform, batch]
+          exporters: [datadog]
+    
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+        
+      pprof:
+        endpoint: 0.0.0.0:1777
+        
+      zpages:
+        endpoint: 0.0.0.0:55679

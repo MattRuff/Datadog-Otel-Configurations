@@ -1,0 +1,31 @@
+# Scenario 3: DDOT Collector (Datadog Distribution of OpenTelemetry)
+# NOTE: Install Datadog Agent with DDOT manually before deploying applications
+global:
+  scenario: "scenario3"
+  environment: "development"
+  
+  # OTLP endpoint for applications (requires manual Datadog Agent with DDOT installation)
+  otelEndpoint: "http://datadog-agent-ddot.datadog.svc.cluster.local:4317"
+
+# Application configurations (single image used for all scenarios)
+frontend:
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+api:
+  enabled: true
+  replicaCount: 2
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+database:
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+redis:
+  enabled: true
+  replicaCount: 1

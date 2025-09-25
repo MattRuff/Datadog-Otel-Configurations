@@ -1,0 +1,130 @@
+apiVersion: datadoghq.com/v2alpha1
+kind: DatadogAgent
+metadata:
+  name: datadog-agent
+  namespace: datadog
+spec:
+  global:
+    clusterName: "otel-lab-cluster"
+    site: "datadoghq.com"  # Change to your Datadog site (e.g., datadoghq.eu, us3.datadoghq.com)
+    registry: "gcr.io/datadoghq"
+    credentials:
+      apiSecret:
+        secretName: datadog-secret
+        keyName: api-key
+      appSecret:
+        secretName: datadog-secret
+        keyName: app-key
+    tags:
+      - "env:development"
+      - "scenario:otel-collector"
+      - "deployment:kubernetes"
+    
+  features:
+    # Disable OTLP ingestion as it will go through OpenTelemetry Collector
+    otlp:
+      receiver:
+        protocols:
+          grpc:
+            enabled: false
+          http:
+            enabled: false
+    
+    # Disable APM as traces will come via OpenTelemetry Collector
+    apm:
+      enabled: false
+    
+    # Enable log collection
+    logCollection:
+      enabled: true
+      containerCollectAll: true
+      
+    # Enable live container monitoring
+    liveContainerCollection:
+      enabled: true
+      
+    # Enable Network Performance Monitoring
+    npm:
+      enabled: true
+      
+    # Enable Universal Service Monitoring
+    usm:
+      enabled: true
+      
+    # Disable admission controller since we're using OTel collector
+    admissionController:
+      enabled: false
+      
+    # Disable external metrics server for this demo
+    externalMetricsServer:
+      enabled: false
+      
+    # Enable orchestrator explorer
+    orchestratorExplorer:
+      enabled: true
+      
+    # Enable KSM core checks
+    kubeStateMetricsCore:
+      enabled: true
+      
+    # Enable Helm check
+    helmCheck:
+      enabled: true
+      collectEvents: true
+      
+  nodeAgent:
+    image:
+      repository: "agent"
+      tag: "latest"
+    
+    config:
+      # Disable OTLP receiver since using OpenTelemetry Collector
+      otlp_config:
+        receiver:
+          protocols:
+            grpc:
+              enabled: false
+            http:
+              enabled: false
+      
+      # Additional logging for debugging
+      log_level: "INFO"
+      
+      # Enable container collection
+      container_collect_all: true
+      
+    tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+        
+    env:
+      - name: DD_APM_ENABLED
+        value: "false"
+      - name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENABLED
+        value: "false"
+      - name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENABLED
+        value: "false"
+        
+  clusterAgent:
+    image:
+      repository: "cluster-agent"
+      tag: "latest"
+      
+    config:
+      clusterChecks:
+        enabled: true
+      
+      # Disable admission controller since using OTel collector
+      admissionController:
+        enabled: false
+        
+      externalMetrics:
+        enabled: false
+        
+    env:
+      - name: DD_CLUSTER_CHECKS_ENABLED
+        value: "true"

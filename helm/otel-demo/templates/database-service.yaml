@@ -1,0 +1,18 @@
+{{- if .Values.database.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: database-service
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "otel-demo.database.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.database.service.type }}
+  ports:
+    - port: {{ .Values.database.service.port }}
+      targetPort: {{ .Values.database.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "otel-demo.database.selectorLabels" . | nindent 4 }}
+{{- end }}

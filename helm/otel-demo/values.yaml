@@ -1,0 +1,247 @@
+# Default values for otel-demo
+global:
+  # Scenario configuration (scenario1, scenario2, scenario3)
+  scenario: "scenario1"
+  
+  # Environment settings
+  environment: "development"
+  
+  # Git information for Datadog source code integration
+  gitCommitSha: ""
+  gitRepositoryUrl: ""
+  
+  # Image pull policy
+  imagePullPolicy: IfNotPresent
+  
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+  
+  # Note: Datadog Agent and OpenTelemetry Collector removed from Helm chart
+  # Install these manually using operators before deploying applications
+  
+  # OTLP endpoint configuration (will be set based on scenario)
+  otelEndpoint: "http://localhost:4317"
+
+# Frontend service configuration
+frontend:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: matthewruyffelaert667/ddog-otel-configurations-frontend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+    
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: frontend.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      
+  env:
+    - name: REACT_APP_ENVIRONMENT
+      value: "{{ .Values.global.environment }}"
+    - name: REACT_APP_OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "{{ .Values.global.otelEndpoint | replace \":4317\" \":4318\" }}/v1/traces"
+    - name: REACT_APP_API_URL
+      value: "http://api-service/api"
+
+# API service configuration
+api:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: matthewruyffelaert667/ddog-otel-configurations-api
+    tag: "latest"
+    pullPolicy: IfNotPresent
+    
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 5001
+    
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+      
+  env:
+    - name: ENVIRONMENT
+      value: "{{ .Values.global.environment }}"
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "{{ .Values.global.otelEndpoint }}"
+    - name: DATABASE_SERVICE_URL
+      value: "http://database-service:5002"
+    - name: PORT
+      value: "5001"
+      
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 5001
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 5001
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# Database service configuration
+database:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: matthewruyffelaert667/ddog-otel-configurations-database
+    tag: "latest"
+    pullPolicy: IfNotPresent
+    
+  service:
+    type: ClusterIP
+    port: 5002
+    targetPort: 5002
+    
+  resources:
+    limits:
+      cpu: 300m
+      memory: 512Mi
+    requests:
+      cpu: 150m
+      memory: 256Mi
+      
+  env:
+    - name: ENVIRONMENT
+      value: "{{ .Values.global.environment }}"
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "{{ .Values.global.otelEndpoint }}"
+    - name: REDIS_HOST
+      value: "redis"
+    - name: REDIS_PORT
+      value: "6379"
+    - name: PORT
+      value: "5002"
+      
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 5002
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 5002
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+# Redis configuration
+redis:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+    
+  service:
+    type: ClusterIP
+    port: 6379
+    targetPort: 6379
+    
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      
+  persistence:
+    enabled: false
+    storageClass: ""
+    size: 1Gi
+    
+  # Redis configuration
+  config: |
+    maxmemory 128mb
+    maxmemory-policy allkeys-lru
+    save ""
+
+# Service mesh configuration (for advanced scenarios)
+serviceMesh:
+  enabled: false
+  type: "istio"  # istio, linkerd, consul-connect
+  
+# Monitoring configuration
+monitoring:
+  enabled: true
+  
+  # Service monitors for Prometheus (if using Prometheus Operator)
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    
+  # Pod monitors
+  podMonitor:
+    enabled: false
+
+# Autoscaling configuration
+autoscaling:
+  enabled: false
+  
+  api:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+    
+  frontend:
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+# Pod disruption budgets
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Network policies
+networkPolicy:
+  enabled: false
+  
+# Pod security policies
+podSecurityPolicy:
+  enabled: false

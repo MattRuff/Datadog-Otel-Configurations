@@ -1,0 +1,31 @@
+# Scenario 2: Via OpenTelemetry Collector
+# NOTE: Install OpenTelemetry Operator manually before deploying applications
+global:
+  scenario: "scenario2"
+  environment: "development"
+  
+  # OTLP endpoint for applications (requires manual OpenTelemetry Collector installation)
+  otelEndpoint: "http://otel-collector.opentelemetry.svc.cluster.local:4317"
+
+# Application configurations (single image used for all scenarios)
+frontend:
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+api:
+  enabled: true
+  replicaCount: 2
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+database:
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+redis:
+  enabled: true
+  replicaCount: 1

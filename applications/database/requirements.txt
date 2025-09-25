@@ -1,0 +1,4 @@
+Flask==2.3.3
+redis==5.0.0
+opentelemetry-distro[otlp]==0.58b0
+Werkzeug==2.3.7

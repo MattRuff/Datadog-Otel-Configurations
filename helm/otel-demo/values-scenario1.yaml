@@ -1,0 +1,31 @@
+# Scenario 1: Direct to Datadog Agent
+# NOTE: Install Datadog Agent manually before deploying applications
+global:
+  scenario: "scenario1"
+  environment: "development"
+  
+  # OTLP endpoint for applications (requires manual Datadog Agent installation)
+  otelEndpoint: "http://datadog-agent.datadog.svc.cluster.local:4317"
+
+# Application configurations (single image used for all scenarios)
+frontend:
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+api:
+  enabled: true
+  replicaCount: 2
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+database:
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: "latest"  # Single image used across all scenarios
+
+redis:
+  enabled: true
+  replicaCount: 1

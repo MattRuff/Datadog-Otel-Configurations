@@ -1,0 +1,91 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "otel-demo.fullname" . }}-api
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "otel-demo.api.labels" . | nindent 4 }}
+    # Scenario identification labels
+    otel-demo.scenario: {{ .Values.global.scenario | quote }}
+    otel-demo.deployment-pattern: {{ .Values.global.scenario | quote }}
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "otel-demo.api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "otel-demo.api.selectorLabels" . | nindent 8 }}
+        # Scenario identification labels on pods
+        otel-demo.scenario: {{ .Values.global.scenario | quote }}
+        otel-demo.deployment-pattern: {{ .Values.global.scenario | quote }}
+        otel-demo.service-type: "api"
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # Scenario identification annotations
+        otel-demo.io/scenario: {{ .Values.global.scenario | quote }}
+        otel-demo.io/deployment-pattern: {{ .Values.global.scenario | quote }}
+        otel-demo.io/telemetry-target: {{ include "otel-demo.otlpEndpoint" . | quote }}
+        {{- if .Values.global.gitCommitSha }}
+        git.commit.sha: {{ .Values.global.gitCommitSha | quote }}
+        {{- end }}
+        {{- if .Values.global.gitRepositoryUrl }}
+        git.repository_url: {{ .Values.global.gitRepositoryUrl | quote }}
+        {{- end }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.global.securityContext | nindent 8 }}
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.service.targetPort }}
+              protocol: TCP
+          env:
+            {{- range .Values.api.env }}
+            - name: {{ .name }}
+              value: {{ tpl .value $ | quote }}
+            {{- end }}
+            {{- include "otel-demo.gitEnvVars" . | nindent 12 }}
+            # Scenario configuration for service naming
+            - name: SCENARIO
+              value: {{ .Values.global.scenario | quote }}
+            
+            # OpenTelemetry auto-instrumentation configuration
+            - name: OTEL_SERVICE_NAME
+              value: {{ include "otel-demo.serviceName" (dict "scenario" .Values.global.scenario "service" "api-service") | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ include "otel-demo.otlpEndpoint" . | quote }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.version={{ .Chart.AppVersion }},deployment.environment={{ .Values.global.environment }},scenario={{ .Values.global.scenario }}{{- if .Values.global.gitCommitSha }},git.commit.sha={{ .Values.global.gitCommitSha }}{{- end }}{{- if .Values.global.gitRepositoryUrl }},git.repository_url={{ .Values.global.gitRepositoryUrl }}{{- end }}"
+          {{- if .Values.api.livenessProbe }}
+          livenessProbe:
+            {{- toYaml .Values.api.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.api.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.api.readinessProbe | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+              readOnly: false
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      restartPolicy: Always
+{{- end }}

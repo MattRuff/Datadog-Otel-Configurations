@@ -1,0 +1,121 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "otel-demo.fullname" . }}-frontend
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "otel-demo.frontend.labels" . | nindent 4 }}
+    # Scenario identification labels
+    otel-demo.scenario: {{ .Values.global.scenario | quote }}
+    otel-demo.deployment-pattern: {{ .Values.global.scenario | quote }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "otel-demo.frontend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "otel-demo.frontend.selectorLabels" . | nindent 8 }}
+        # Scenario identification labels on pods
+        otel-demo.scenario: {{ .Values.global.scenario | quote }}
+        otel-demo.deployment-pattern: {{ .Values.global.scenario | quote }}
+        otel-demo.service-type: "frontend"
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # Scenario identification annotations
+        otel-demo.io/scenario: {{ .Values.global.scenario | quote }}
+        otel-demo.io/deployment-pattern: {{ .Values.global.scenario | quote }}
+        otel-demo.io/telemetry-target: {{ include "otel-demo.otlpEndpoint" . | quote }}
+        {{- if .Values.global.gitCommitSha }}
+        git.commit.sha: {{ .Values.global.gitCommitSha | quote }}
+        {{- end }}
+        {{- if .Values.global.gitRepositoryUrl }}
+        git.repository_url: {{ .Values.global.gitRepositoryUrl | quote }}
+        {{- end }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.global.securityContext | nindent 8 }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.targetPort }}
+              protocol: TCP
+          env:
+            {{- range .Values.frontend.env }}
+            - name: {{ .name }}
+              value: {{ tpl .value $ | quote }}
+            {{- end }}
+            # Git information for frontend tracing (React env vars)
+            {{- if .Values.global.gitCommitSha }}
+            - name: REACT_APP_GIT_COMMIT_SHA
+              value: {{ .Values.global.gitCommitSha | quote }}
+            {{- end }}
+            {{- if .Values.global.gitRepositoryUrl }}
+            - name: REACT_APP_GIT_REPOSITORY_URL
+              value: {{ .Values.global.gitRepositoryUrl | quote }}
+            {{- end }}
+            # React app configuration with scenario-specific service naming
+            - name: REACT_APP_SCENARIO
+              value: {{ .Values.global.scenario | quote }}
+            - name: REACT_APP_SERVICE_NAME
+              value: {{ include "otel-demo.serviceName" (dict "scenario" .Values.global.scenario "service" "frontend-service") | quote }}
+            - name: REACT_APP_VERSION
+              value: {{ .Chart.AppVersion | quote }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+          # Volume mounts for writable directories needed by nginx
+          volumeMounts:
+            - name: tmp-nginx
+              mountPath: /tmp/nginx
+            - name: tmp-client
+              mountPath: /tmp/client_temp
+            - name: tmp-proxy
+              mountPath: /tmp/proxy_temp
+            - name: tmp-fastcgi
+              mountPath: /tmp/fastcgi_temp
+            - name: tmp-uwsgi
+              mountPath: /tmp/uwsgi_temp
+            - name: tmp-scgi
+              mountPath: /tmp/scgi_temp
+          # Simple health check since this is a static frontend
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.frontend.service.targetPort }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.frontend.service.targetPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      # Volumes for writable directories needed by nginx
+      volumes:
+        - name: tmp-nginx
+          emptyDir: {}
+        - name: tmp-client
+          emptyDir: {}
+        - name: tmp-proxy
+          emptyDir: {}
+        - name: tmp-fastcgi
+          emptyDir: {}
+        - name: tmp-uwsgi
+          emptyDir: {}
+        - name: tmp-scgi
+          emptyDir: {}
+      restartPolicy: Always
+{{- end }}

@@ -1,0 +1,24 @@
+apiVersion: v2
+name: otel-demo
+description: OpenTelemetry + Datadog Demo Application
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - opentelemetry
+  - datadog
+  - observability
+  - microservices
+  - tracing
+
+home: https://github.com/MattRuff/Datadog-Otel-Configurations
+sources:
+  - https://github.com/MattRuff/Datadog-Otel-Configurations
+
+maintainers:
+  - name: OpenTelemetry Demo Team
+    email: demo@example.com
+
+annotations:
+  category: Observability

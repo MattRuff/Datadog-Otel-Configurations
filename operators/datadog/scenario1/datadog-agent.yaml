@@ -1,0 +1,138 @@
+apiVersion: datadoghq.com/v2alpha1
+kind: DatadogAgent
+metadata:
+  name: datadog-agent
+  namespace: datadog
+spec:
+  global:
+    clusterName: "otel-lab-cluster"
+    site: "datadoghq.com"  # Change to your Datadog site (e.g., datadoghq.eu, us3.datadoghq.com)
+    registry: "gcr.io/datadoghq"
+    credentials:
+      apiSecret:
+        secretName: datadog-secret
+        keyName: api-key
+      appSecret:
+        secretName: datadog-secret
+        keyName: app-key
+    tags:
+      - "env:development"
+      - "scenario:direct-agent"
+      - "deployment:kubernetes"
+    
+  features:
+    # Enable OTLP ingestion for direct connection
+    otlp:
+      receiver:
+        protocols:
+          grpc:
+            enabled: true
+            endpoint: "0.0.0.0:4317"
+          http:
+            enabled: true
+            endpoint: "0.0.0.0:4318"
+    
+    # Enable standard APM features
+    apm:
+      enabled: true
+      hostPortEnabled: true
+      unixDomainSocketEnabled: true
+    
+    # Enable log collection
+    logCollection:
+      enabled: true
+      containerCollectAll: true
+      
+    # Enable live container monitoring
+    liveContainerCollection:
+      enabled: true
+      
+    # Enable Network Performance Monitoring
+    npm:
+      enabled: true
+      
+    # Enable Universal Service Monitoring
+    usm:
+      enabled: true
+      
+    # Enable admission controller for automatic instrumentation
+    admissionController:
+      enabled: true
+      mutateUnlabelled: false
+      
+    # Disable external metrics server for this demo
+    externalMetricsServer:
+      enabled: false
+      
+    # Enable orchestrator explorer
+    orchestratorExplorer:
+      enabled: true
+      
+    # Enable KSM core checks
+    kubeStateMetricsCore:
+      enabled: true
+      
+    # Enable Helm check
+    helmCheck:
+      enabled: true
+      collectEvents: true
+      
+  nodeAgent:
+    image:
+      repository: "agent"
+      tag: "latest"
+    
+    config:
+      # Enable OTLP receiver directly in the agent
+      otlp_config:
+        receiver:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+      
+      # Additional logging for debugging
+      log_level: "INFO"
+      
+      # Enable container collection
+      container_collect_all: true
+      
+    tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+        
+    env:
+      - name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT
+        value: "0.0.0.0:4317"
+      - name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT
+        value: "0.0.0.0:4318"
+      - name: DD_APM_ENABLED
+        value: "true"
+      - name: DD_APM_NON_LOCAL_TRAFFIC
+        value: "true"
+        
+  clusterAgent:
+    image:
+      repository: "cluster-agent"
+      tag: "latest"
+      
+    config:
+      clusterChecks:
+        enabled: true
+      
+      # Enable admission controller
+      admissionController:
+        enabled: true
+        mutateUnlabelled: false
+        
+      externalMetrics:
+        enabled: false
+        
+    env:
+      - name: DD_CLUSTER_CHECKS_ENABLED
+        value: "true"
